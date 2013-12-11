@@ -8,16 +8,9 @@
 
     section("Turn on which things") {
         input "switches", "capability.switch", title: "Things", multiple: true
-        input "allowOverride", "enum", title: "Allow manual override?", multiple: false, metadata: [
-        values: [
-        'Yes',
-        'No'
-        ]
-        ]
     }
 
     section("Turn on when:") {
-        input "startMode", "mode", title: "Mode changes to", required: false
         input "onUntil", "time", title: "Leave on until"
     }
 
@@ -40,21 +33,39 @@ def updated() {
 }
 
 def initialize() {
+	log.debug "Settings: $settings"
+    
+	schedule(onUntil, modeStopThings)
+    schedule("0 5 0 * * ?", setupSchedule)
+    
     subscribe(motion1, "motion", motionHandler)
-    subscribe(location)
+    setupSchedule()
+}
 
-    if(allowOverride == 'Yes') {
-        subscribe(switches, "switch", switchHandler)
-    }
-
-    if(location.currentMode == startMode) {
-        modeStartThings()
+def setupSchedule() {
+	def times = getSunriseAndSunset()
+    state.sunrise = times.sunrise
+    state.sunset = times.sunset
+    
+    def now = new Date()
+    def offTime = timeToday(onUntil)
+    
+    if(now > state.sunset) {
+    	if(now < offTime) {
+            log.debug "Before off time: $offTime"
+            modeStartThings()
+        }
+    } else {
+    	log.debug "Scheduling start: ${state.sunset}"
+    	runOnce(state.sunset, modeStartThings)
     }
 }
 
-def motionHandler(evt) {
-    if(!state.modeStarted && location.currentMode == startMode) {
-        if (evt.value == "active") {
+def motionHandler(evt) {    
+    if(!state.modeStarted) {
+        def times = getSunriseAndSunset()
+        def now = new Date()
+        if (evt.value == "active" && (now > times.sunset || now < times.sunrise)) {
             log.debug "Saw Motion"
 
             // Unschedule the stopping of things
@@ -70,31 +81,16 @@ def motionHandler(evt) {
     }
 }
 
-def changedLocationMode(evt) {
-    log.debug "Mode: ${location.currentMode}"
-    if(location.currentMode == startMode) {
-        modeStartThings()
-    } else {
-        modeStopThings()
-        state.motionStarted = false
-    }
-}
-
 def modeStartThings() {
     log.debug "Mode starting things"
     state.modeStarted = true
     startThings()
-
-    schedule(getNextTime(), "modeStopThings")
 }
 
 def modeStopThings() {
     log.debug "Mode stopping things"
     state.modeStarted = false
     stopThings()
-
-    // Unschedule any additional stopping of things
-    unschedule("modeStopThings")
 }
 
 def motionStopThings() {
@@ -102,49 +98,14 @@ def motionStopThings() {
     state.motionStarted = false
 }
 
-def switchHandler(evt) {
-    log.debug "Switch: ${evt.value}"
-
-    // Did we activate the things?
-    if(state.thingsOn) {
-        return
-    }
-
-    if(evt.value == 'on') {
-        log.debug "Override activated"
-        state.override = true;
-    }
-    else if (evt.value == 'off') {
-        log.debug "Override deactivated"
-        state.override = false;
-    }
-}
-
 def startThings() {
-    // If override is active, do nothing.
-    if(state.override) {
-        log.debug "Not starting due to override"
-        return
-    }
-
     log.debug "Starting things"
     state.thingsOn = true
     switches.on()
 }
 
 def stopThings() {
-    // If override is active, do nothing.
-    if(state.override) {
-        log.debug "Not stopping due to override"
-        return
-    }
-
     log.debug "Stopping things"
     switches.off()
     state.thingsOn = false
-}
-
-def getNextTime() {
-    //return timeTodayAfter(new Date().format('HH:mm'), onUntil)
-    return nextOccurrence(onUntil)
 }
