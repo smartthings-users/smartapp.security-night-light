@@ -36,7 +36,7 @@ def initialize() {
 	log.debug "Settings: $settings"
     
 	schedule(onUntil, modeStopThings)
-    schedule("0 5 0 * * ?", setupSchedule)
+    schedule("1 5 0 * * ?", setupSchedule)
     
     subscribe(motion1, "motion", motionHandler)
     setupSchedule()
@@ -44,10 +44,11 @@ def initialize() {
 
 def setupSchedule() {
     def now = new Date()
-    def sunrise = GetSunriseTime(now, location.latitude, location.longitude)
-    def sunset = GetSunsetTime(now, location.latitude, location.longitude)
+    def times = getSunriseAndSunset()
+    def sunrise = times.sunrise
+    def sunset = times.sunset
     
-    log.debug "Times: $sunrise | $sunset"
+    log.debug "Rise: $sunrise | Set: $sunset | Now: $now"
     
     def offTime = timeToday(onUntil)
     
